@@ -8,29 +8,12 @@ from typing import Tuple, Callable, TypeAlias, ParamSpec
 import keyring
 
 from api import GrabCadAPI
-from entities.exceptions import NotAuthenticatedError, InvalidProjectUrl, \
-    RepoNotInitialized
+from entities.exceptions import NotAuthenticatedError, InvalidProjectUrl
 from filesystem import Filesystem
+from keyring_manager import CredManager
 from state import State
 
 APP_ID = 'PyGC'
-
-
-def initialize(email: str, password: str) -> Tuple[GrabCadAPI, State, Filesystem]:
-    directory = os.path.dirname(os.path.realpath(__file__))
-    print(directory)
-    api = GrabCadAPI(email, password, directory)
-    state = State.load()
-    filesystem = Filesystem(state=state, api=api)
-    return api, state, filesystem
-
-
-def _fetch_creds_keyring() -> Tuple[str, str]:
-    password = keyring.get_password(APP_ID, 'password')
-    email = keyring.get_password(APP_ID, 'email')
-    if not all([password, email]):
-        raise NotAuthenticatedError()
-    return email, password
 
 
 P = ParamSpec('P')
@@ -51,25 +34,10 @@ def _manage_creds(func: CredFunction) -> CredFunction:
         email = kwargs['email']
         password = kwargs['password']
         no_save = kwargs['no_save']
-        if email and password:
-            if not no_save:
-                _save_creds(email, password)
-            return func(**kwargs)
-        else:
-            kwargs['email'], kwargs['password'] = _fetch_creds_keyring()
-            return func(**kwargs)
+        m = CredManager(email=email, password=password, no_save=no_save)
+        kwargs['email'], kwargs['password'] = m.get_creds()
+        return func(**kwargs)
     return inner
-
-
-def _save_creds(email: str, password: str):
-    """
-    Saves credentials to the keyring
-    :param email:
-    :param password:
-    :return:
-    """
-    keyring.set_password(APP_ID, 'password', password)
-    keyring.set_password(APP_ID, 'email', email)
 
 
 @_manage_creds
@@ -120,6 +88,7 @@ login_parent_parser.add_argument(
 login_parent_parser.add_argument(
     '--dont_save_creds', help='prevent saving your credentials to keyring',
     required=False, default=False, dest='no_save', type=bool)
+
 
 login_parser = subparsers.add_parser(
     'login', help='log into GrabCad account')

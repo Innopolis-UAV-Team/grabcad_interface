@@ -6,7 +6,8 @@ class AuthError(Exception):
 class NotAuthenticatedError(Exception):
     def __init__(self):
         super().__init__(
-            "Please authenticate yourself with `python pygc.py login --email <> --pass <>` first")
+            "Please authenticate yourself with `python pygc.py login --email <> --pass <>` first\n"
+            "Or use --email and --pass in your command if --dont_save_creds is set to True")
 
 
 class ProjectNotSet(Exception):
