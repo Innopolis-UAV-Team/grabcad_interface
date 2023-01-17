@@ -74,17 +74,18 @@ def _save_creds(email: str, password: str):
 
 @_manage_creds
 def init(url: str, email: str, password: str, **kwargs):
-    project_id = re.search(r'projects/(.*)#/', url).group(1)
-    if project_id is None:
-        raise InvalidProjectUrl(url)
-    api = GrabCadAPI(email, password, './')
-    project = api.get_project_info(project_id)
-    path = os.path.join(os.getcwd(), project.name)
-    os.mkdir(path)
-    print(f'Initialize empty repo at {path}')
-    with State(state_dir=path) as state:
+    with State(state_dir=os.getcwd()) as state:
+        if state.project and state.organisation:
+            print(f'Current directory has already initialized repo {state.project.name}. Leaving')
+            return
+        project_id = re.search(r'projects/(.*)\??#/', url).group(1)
+        if project_id is None:
+            raise InvalidProjectUrl(url)
+        api = GrabCadAPI(email, password, './')
+        project = api.get_project_info(project_id)
         state.project = project
         state.organisation = project.org
+        print(f'Successfully initialized GrabCAD repo {project.name}')
 
 
 def login(email: str, password: str, **kwargs):

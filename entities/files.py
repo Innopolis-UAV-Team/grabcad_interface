@@ -6,8 +6,8 @@ import re
 import typing
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum, auto
 from typing import List, Tuple, Dict
+
 if typing.TYPE_CHECKING:
     from api import GrabCadAPI
 
