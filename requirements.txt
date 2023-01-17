@@ -1,0 +1,5 @@
+lxml~=4.9.2
+httpx~=0.23.3
+python-dateutil~=2.8.2
+async_lru~=1.0.3
+keyring~=23.13.1

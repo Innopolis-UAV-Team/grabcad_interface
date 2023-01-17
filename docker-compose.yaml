@@ -1,0 +1,11 @@
+version: '3.7'
+services:
+  grabcad:
+    image: grabcad
+    build:
+      context: .
+
+    container_name: grabcad_runner
+
+    volumes:
+      - /grabcad_repo:/grabcad_repo
