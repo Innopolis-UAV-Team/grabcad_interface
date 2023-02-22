@@ -12,5 +12,4 @@ done
 
 cd /grabcad_repo || return
 
-python3 /grabcad/pygc.py init --email "${email}" --pass "${password}" --url "${url}" --dont_save_creds true
-python3 /grabcad/pygc.py pull --email "${email}" --pass "${password}" --dont_save_creds true
+python3 /grabcad/pygc.py clone --url "${url}" --email "${email}" --pass "${password}" --dont_save_creds true

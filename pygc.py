@@ -40,26 +40,15 @@ def _manage_creds(func: CredFunction) -> CredFunction:
     return inner
 
 
-@_manage_creds
-def init(url: str, email: str, password: str, **kwargs):
-    project_id = re.search(r'projects/(.*)\??#/', url).group(1)
-    if project_id is None:
-        raise InvalidProjectUrl(url)
-    api = GrabCadAPI(email, password, './')
-    project = api.get_project_info(project_id)
-    api.default_project = project
-    root_folder = api.get_folder_info(project.root_folder_id)[0]
-
-    if os.path.exists(root_folder.filename):
-        print(f'Folder {root_folder.filename} already exists. Leaving')
+def init(name: str, **kwargs):
+    if os.path.exists(name):
+        print(f'Folder {name} already exists. Leaving')
         return
 
-    os.mkdir(root_folder.filename)
-
-    with State(state_dir=os.path.join(os.getcwd(), root_folder.filename)) as state:
-        state.project = project
-        state.organisation = project.org
-        print(f'Successfully initialized GrabCAD repo {project.name}')
+    os.mkdir(name)
+    with State(state_dir=os.path.join(os.getcwd(), name)) as state:
+        pass
+    print(f"Successfully initialized empty GrabCAD repo {name}")
 
 
 @_manage_creds
@@ -70,7 +59,7 @@ def login(email: str, password: str, **kwargs):
 @_manage_creds
 def pull(email: str, password: str, force: bool, quiet: bool, **kwargs):
     with State(state_dir=os.getcwd()) as state:
-        api = GrabCadAPI(email, password, './')
+        api = GrabCadAPI(email, password, os.getcwd())
         api.load_defaults_from_state(state)
         filesystem = Filesystem(state=state, api=api)
         last_commit = state.last_local_commit()
@@ -81,6 +70,32 @@ def pull(email: str, password: str, force: bool, quiet: bool, **kwargs):
         # TODO fix non-force pull eating changes to locally-changed files
         commits = state.diff(commits)[1]
         f = filesystem.pull(commits, force=force, quiet=quiet)
+
+
+@_manage_creds
+def clone(url: str, email: str, password: str, **kwargs):
+    project_id = re.search(r'projects/(.*)\??#/', url).group(1)
+    if project_id is None:
+        raise InvalidProjectUrl(url)
+    api = GrabCadAPI(email, password, './')
+    project = api.get_project_info(project_id)
+    api.default_project = project
+    root_folder = api.get_folder_info(project.root_folder_id)[0]
+
+    if os.path.exists(root_folder.filename):
+        print(f'Folder {root_folder.filename} already exists. Trying to pull')
+        os.chdir(root_folder.filename)
+        pull(email=email, password=password, **kwargs)
+        return
+
+    os.mkdir(root_folder.filename)
+
+    with State(state_dir=os.path.join(os.getcwd(), root_folder.filename)) as state:
+        state.project = project
+        state.organisation = project.org
+        print(f'Successfully initialized GrabCAD repo {project.name}')
+    os.chdir(root_folder.filename)
+    pull(email=email, password=password, **kwargs)
 
 
 parser = argparse.ArgumentParser()
@@ -107,8 +122,22 @@ login_parser.set_defaults(func=login)
 init_parser = subparsers.add_parser(
     'init', help='initialize new GrabCad repo', parents=[login_parent_parser])
 init_parser.add_argument(
-    '--url', help='project url', dest='url', required=True)
+    '--name', help='repo name to create', dest='name', required=True)
 init_parser.set_defaults(func=init)
+
+
+clone_parser = subparsers.add_parser(
+    'clone', help='Clone GrabCad repo', parents=[login_parent_parser])
+clone_parser.add_argument(
+    '--url', help='project url', dest='url', required=True)
+clone_parser.set_defaults(func=clone)
+clone_parser.add_argument(
+    '--force', default=False, type=bool,
+    help='overwrite local changes forcibly', dest='force')
+clone_parser.add_argument(
+    '--quiet', default=False, type=bool,
+    help='supress downloader messages', dest='quiet')
+
 
 pull_parser = subparsers.add_parser(
     'pull', help='integrate remote changes', parents=[login_parent_parser])
