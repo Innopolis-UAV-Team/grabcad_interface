@@ -48,7 +48,7 @@ class Filesystem:
         deleted = [x.file for x in changed_files.values() if x.change_code == ChangeCode.DELETED]
         return changed, deleted
 
-    def pull(self, commits: List[Commit], force: bool = False, quiet: bool = False, batch_size: int = 50) -> List[LocalFile]:
+    def pull(self, commits: List[Commit], force: bool = False, quiet: bool = False) -> List[LocalFile]:
         # use file digest as a key to find which files were changed
         local_files = {
             x.digest: x for x in self.local_file_list
@@ -84,17 +84,9 @@ class Filesystem:
                 os.path.normpath(file.full_path) == os.path.normpath(overwriting_changes[file.filename].full_path))
         ]
 
-        batches = [
-            files_to_download[x:x + batch_size]
-            for x in range(0, len(files_to_download), batch_size)
-        ]
+        self.api.download_files(files_to_download)
 
-        for batch in batches:
-            self.api.download_files(batch)
-
-            if not quiet:
-                print(f'Downloaded: {os.linesep.join([file.filename for file in batch])}')
-
+        # Now update the state of an application with new commits
         for commit in commits:
             for change in commit.changes:
                 change.file = LocalFile(

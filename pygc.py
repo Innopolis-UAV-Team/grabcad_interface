@@ -42,23 +42,29 @@ def _manage_creds(func: CredFunction) -> CredFunction:
 
 @_manage_creds
 def init(url: str, email: str, password: str, **kwargs):
-    with State(state_dir=os.getcwd()) as state:
-        if state.project and state.organisation:
-            print(f'Current directory has already initialized repo {state.project.name}. Leaving')
-            return
-        project_id = re.search(r'projects/(.*)\??#/', url).group(1)
-        if project_id is None:
-            raise InvalidProjectUrl(url)
-        api = GrabCadAPI(email, password, './')
-        project = api.get_project_info(project_id)
+    project_id = re.search(r'projects/(.*)\??#/', url).group(1)
+    if project_id is None:
+        raise InvalidProjectUrl(url)
+    api = GrabCadAPI(email, password, './')
+    project = api.get_project_info(project_id)
+    api.default_project = project
+    root_folder = api.get_folder_info(project.root_folder_id)[0]
+
+    if os.path.exists(root_folder.filename):
+        print(f'Folder {root_folder.filename} already exists. Leaving')
+        return
+
+    os.mkdir(root_folder.filename)
+
+    with State(state_dir=os.path.join(os.getcwd(), root_folder.filename)) as state:
         state.project = project
         state.organisation = project.org
         print(f'Successfully initialized GrabCAD repo {project.name}')
 
 
+@_manage_creds
 def login(email: str, password: str, **kwargs):
     GrabCadAPI(email, password, './')
-    _save_creds(email, password)
 
 
 @_manage_creds

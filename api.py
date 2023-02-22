@@ -4,18 +4,19 @@ import datetime
 import math
 import os.path
 from asyncio import AbstractEventLoop
-from typing import List, Tuple, TypeVar, Union
+from typing import List, Tuple, TypeVar, Union, Dict
 from urllib.parse import unquote
 
 from async_lru import alru_cache
 from dateutil import parser
-from httpx import AsyncClient
+from httpx import AsyncClient, Limits, Timeout
 from lxml import html as tree
 from lxml.html import HtmlElement
 
 from entities.exceptions import AuthError, ProjectNotSet, OrganisationNotSet, \
     RepoNotInitialized
-from entities.files import FileShort, File, Folder, Triplet
+from entities.files import FileShort, File, Folder, Triplet, \
+    BatchDownloadProgress, FileDownloadProgress
 from entities.grabcad import Project, Organisation, User, UserWithRole, \
     UserRole, Commit, Change, ChangeCode
 from typing import TYPE_CHECKING
@@ -58,7 +59,11 @@ class GrabCadAPI(metaclass=Singleton):
         self.root_folder = os.path.abspath(root_folder)
         self.loop = asyncio.get_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.client = AsyncClient()
+        self.client = AsyncClient(
+            limits=Limits(
+                max_connections=10,
+                max_keepalive_connections=5),
+            timeout=Timeout(None))
         login_page_data: HtmlElement = self.loop.run_until_complete(
             self.client.request('GET', 'https://workbench.grabcad.com/login')).text
         login_page = tree.fromstring(login_page_data)
@@ -112,7 +117,7 @@ class GrabCadAPI(metaclass=Singleton):
         raise OrganisationNotSet()
 
     @alru_cache
-    async def get_file_info(self, file_id: int, project_id: str = "") -> File:
+    async def a_get_file_info(self, file_id: int, project_id: str = "") -> File:
         """
         Gets information about this file from GrabCAD server
         :param file_id:
@@ -133,11 +138,12 @@ class GrabCadAPI(metaclass=Singleton):
             last_update=parser.parse(file_data["updated_at"]),
             version_list={
                 x["version_number"]: x["url"] for x in file_data["versions"]
-            }
+            },
+            size=file_data["size_in_bytes"]
         )
 
     @alru_cache
-    async def get_folder_info(self, folder_id: int, project_id: str = "") -> Tuple[Folder, List[Triplet]]:
+    async def a_get_folder_info(self, folder_id: int, project_id: str = "") -> Tuple[Folder, List[Triplet]]:
         """
         Gets information about this folder from GrabCAD server
         :param folder_id:
@@ -158,6 +164,16 @@ class GrabCadAPI(metaclass=Singleton):
             item_id=x["id"],
             type=x["filetype"]
         ) for x in folder_data['children']]
+
+    def get_file_info(self, file_id: int, project_id: str = "") -> File:
+        return self.loop.run_until_complete(
+            self.a_get_file_info(file_id, project_id)
+        )
+
+    def get_folder_info(self, folder_id: int, project_id: str = "") -> Tuple[Folder, List[Triplet]]:
+        return self.loop.run_until_complete(
+            self.a_get_folder_info(folder_id, project_id)
+        )
 
     def get_commits_since(self, time: datetime.datetime, project: Project = None) -> List[Commit]:
         project = self._active_project(project)
@@ -353,22 +369,46 @@ class GrabCadAPI(metaclass=Singleton):
             to_visit = buff
         return root_folder
 
-    def download_files(self, files: List[File]):
+    def download_files(self, files: List[File], batch_size: int = 20):
         """
         Download and save to disk file in `files`, in parallel
+        :param batch_size: batch size
         :param files: files to be downloaded
         :return:
         """
+        print('ready to download')
+
         async def download_file(file: File, api: GrabCadAPI):
             link = file.version_list[file.last_version]
-            data = await api.client.get(link)
             path = os.path.join(api.root_folder, file.path_without_root_folder)
             os.makedirs(path, exist_ok=True)
-            file.save(data.content)
+            async with api.client.stream('GET', link) as resp:
+                total_len = int(resp.headers["Content-Length"])
+                progress.add(
+                    FileDownloadProgress(
+                        file=file,
+                        size=total_len
+                    )
+                )
+                with file:
+                    async for chunk in resp.aiter_bytes():
+                        file.save_chunk(chunk)
+                        progress.update_progress(file, len(chunk))
+                        progress.render()
+        
         # use async inner function to achieve parallelism
-        self.loop.run_until_complete(
-            asyncio.gather(*[download_file(file, self) for file in files])
-        )
+
+        files.sort(key=lambda x: x.size, reverse=True)
+
+        batches = [
+            files[x:x + batch_size]
+            for x in range(0, len(files), batch_size)]
+
+        for batch in batches:
+            progress = BatchDownloadProgress(expected_batch_size=batch_size)
+            self.loop.run_until_complete(
+                asyncio.gather(*[download_file(file, self) for file in batch])
+            )
 
     def upload_files(self, files: List[File], commit_message: str, project: Project = None):
         """
