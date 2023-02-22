@@ -25,16 +25,7 @@ if TYPE_CHECKING:
     from state import State
 
 
-class Singleton(type):
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-
-class GrabCadAPI(metaclass=Singleton):
+class GrabCadAPI:
     client: AsyncClient
     loop: AbstractEventLoop
     root_folder: str

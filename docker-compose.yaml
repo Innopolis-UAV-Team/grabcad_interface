@@ -8,4 +8,4 @@ services:
     container_name: grabcad_runner
 
     volumes:
-      - /grabcad_repo:/grabcad_repo
+      - ${REPO_VOLUME_PATH}/grabcad_repo:/grabcad_repo
